@@ -24,7 +24,6 @@ def get_face_detector(model_path=None, config_path=None, quantized=False):
     
     return model
 
-
 def find_faces(image, model, confidence_threshold=0.5):
     """
     Detects faces in an image using a DNN model.

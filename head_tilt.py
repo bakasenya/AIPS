@@ -24,6 +24,7 @@ def get_2d_projection(img, rvec, tvec, cam_matrix, val):
     points_2d, _ = cv2.projectPoints(points_3d, rvec, tvec, cam_matrix, dist_coeffs)
     return np.int32(points_2d.reshape(-1, 2))
 
+
 def draw_pose_box(img, rvec, tvec, cam_matrix, color=(255, 255, 0), thickness=2):
     """Draws the 3D head pose annotation box."""
     h, w = img.shape[:2]

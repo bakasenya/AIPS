@@ -16,7 +16,6 @@ face_detector = get_face_detector()
 spoof_model = joblib.load('models/face_spoofing.pkl')
 
 cap = cv2.VideoCapture(0)
-
 # Spoof detection sampling settings
 sample_window_size = 1
 frame_count = 0

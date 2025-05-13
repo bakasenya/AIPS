@@ -3,7 +3,6 @@ import numpy as np
 from face import get_face_detector, find_faces
 from facial_points import get_landmark_model, detect_marks
 
-
 # Eye indices from dlib shape
 LEFT_EYE_INDICES = [36, 37, 38, 39, 40, 41]
 RIGHT_EYE_INDICES = [42, 43, 44, 45, 46, 47]

@@ -15,7 +15,6 @@ def get_landmark_model(model_path='models/pose_model'):
     """
     return tf.saved_model.load(model_path)
 
-
 def get_square_box(box):
     """
     Convert a rectangular bounding box to a square one by expanding the shorter side.

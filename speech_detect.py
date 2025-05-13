@@ -72,7 +72,6 @@ def save_and_convert(i):
     filename = f'record{i}.wav'
     read_audio(stream, filename)
     convert(i-1)  # Convert previous audio while recording the current one
-
 # Main function to handle the recording and conversion process
 def main():
     for i in range(30//10):  # Number of total seconds to record (3 chunks of 10 seconds)
@@ -97,5 +96,3 @@ def main():
     print(f'Number of common elements: {len(comm)}')
     print(comm)
 
-if __name__ == '__main__':
-    main()

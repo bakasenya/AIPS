@@ -72,7 +72,6 @@ def main():
         ret, img = cap.read()
         if not ret:
             break
-        
         rects = find_faces(img, face_model)
         for rect in rects:
             shape = detect_marks(img, landmark_model, rect)
