@@ -16,7 +16,7 @@ Employs OpenCV, Dlib, YOLOv3, and Google Speech Recognition API for intelligent 
 ## Vision
 
 1. If the person is looking left, right, up or down, it will track eyes and report.
-2. [Check mouth opening logic → mouth_opening_detector.py](mouth_opening_detector.py)
+2. [Check mouth opening logic → mouth_opening_detector.py](mouth_opening_detector.py).
 3.Find instances of Mobile phones.
 4. Reports if no or more than one person is detected.
 5. Face spoof detection
