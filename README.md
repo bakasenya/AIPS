@@ -13,14 +13,16 @@ Employs OpenCV, Dlib, YOLOv3, and Google Speech Recognition API for intelligent 
 ![CNN](images/CNN.png)
 ![YoLo](images/YoLo3.png)
 
-#Vision
+## Vision
+
 1. If the person is looking left, right, up or down, it will track eyes and report.
 2. Checks if the candidate is opening his mouth using mouth_opening_detector.py
 3.Find instances of Mobile phones.
 4. Reports if no or more than one person is detected.
 5. Face spoof detection
 
-##Eye tracking-
+## Eye tracking-
+
 ![eyetracker](images/Picture1.png)
 ![dlibfacialpoints](images/Dlib_Facial_points.png)
 
@@ -30,7 +32,7 @@ Employs OpenCV, Dlib, YOLOv3, and Google Speech Recognition API for intelligent 
 ## Mobile phone detected-
 ![mobilephone](images/Pictur31.png)
 
-#Audio audio_part.py
+## Audio audio_part.py
 1. Audio from microphone is recorded and converted into text using Google's Speech recognition API.
 2. NLTK removes stopwords from the file.
 3. Finally, common words along with its numbers are presented to the proctor.
