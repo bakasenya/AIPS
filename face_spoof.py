@@ -1,72 +1,79 @@
 import numpy as np
 import cv2
-from sklearn.externals import joblib
-from face_detector import get_face_detector, find_faces
+import joblib
+from face import get_face_detector, find_faces
 
-def calc_hist(img):
+def compute_normalized_histogram(img):
+    hist_channels = []
+    for channel in range(3):
+        hist = cv2.calcHist([img], [channel], None, [256], [0, 256])
+        hist *= 255.0 / hist.max()
+        hist_channels.append(hist)
+    return np.array(hist_channels)
 
-    histogram = [0] * 3
-    for j in range(3):
-        histr = cv2.calcHist([img], [j], None, [256], [0, 256])
-        histr *= 255.0 / histr.max()
-        histogram[j] = histr
-    return np.array(histogram)
+# Load face detector and trained spoofing classifier
+face_detector = get_face_detector()
+spoof_model = joblib.load('models/face_spoofing.pkl')
 
-face_model = get_face_detector()
-clf = joblib.load('models/face_spoofing.pkl')
 cap = cv2.VideoCapture(0)
 
-sample_number = 1
-count = 0
-measures = np.zeros(sample_number, dtype=np.float)
+# Spoof detection sampling settings
+sample_window_size = 1
+frame_count = 0
+probability_samples = np.zeros(sample_window_size, dtype=np.float32)
 
 while True:
-    ret, img = cap.read()
-    faces = find_faces(img, face_model)
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-    measures[count%sample_number]=0
-    height, width = img.shape[:2]
-    for x, y, x1, y1 in faces:
-        
-        roi = img[y:y1, x:x1]
-        point = (0,0)
-        
-        img_ycrcb = cv2.cvtColor(roi, cv2.COLOR_BGR2YCR_CB)
-        img_luv = cv2.cvtColor(roi, cv2.COLOR_BGR2LUV)
+    detected_faces = find_faces(frame, face_detector)
+    probability_samples[frame_count % sample_window_size] = 0
+    height, width = frame.shape[:2]
 
-        ycrcb_hist = calc_hist(img_ycrcb)
-        luv_hist = calc_hist(img_luv)
+    for x1, y1, x2, y2 in detected_faces:
+        face_roi = frame[y1:y2, x1:x2]
+        label_position = (x1, y1 - 5)
 
-        feature_vector = np.append(ycrcb_hist.ravel(), luv_hist.ravel())
-        feature_vector = feature_vector.reshape(1, len(feature_vector))
+        # Color space conversions
+        face_ycrcb = cv2.cvtColor(face_roi, cv2.COLOR_BGR2YCR_CB)
+        face_luv = cv2.cvtColor(face_roi, cv2.COLOR_BGR2LUV)
 
-        prediction = clf.predict_proba(feature_vector)
-        prob = prediction[0][1]
+        # Compute histograms
+        hist_ycrcb = compute_normalized_histogram(face_ycrcb)
+        hist_luv = compute_normalized_histogram(face_luv)
 
-        measures[count % sample_number] = prob
+        # Create feature vector and reshape
+        feature_vector = np.append(hist_ycrcb.ravel(), hist_luv.ravel()).reshape(1, -1)
 
-        cv2.rectangle(img, (x, y), (x1, y1), (255, 0, 0), 2)
+        # Predict spoof probability
+        spoof_prob = spoof_model.predict_proba(feature_vector)[0][1]
+        probability_samples[frame_count % sample_window_size] = spoof_prob
 
-        point = (x, y-5)
+        # Draw bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
 
-        # print (measures, np.mean(measures))
-        if 0 not in measures:
-            text = "True"
-            if np.mean(measures) >= 0.7:
-                text = "False"
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(img=img, text=text, org=point, fontFace=font, fontScale=0.9, color=(0, 0, 255),
-                            thickness=2, lineType=cv2.LINE_AA)
-            else:
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(img=img, text=text, org=point, fontFace=font, fontScale=0.9,
-                            color=(0, 255, 0), thickness=2, lineType=cv2.LINE_AA)
-        
-    count+=1
-    cv2.imshow('img_rgb', img)
-    
+        # Display label based on average probability
+        if 0 not in probability_samples:
+            label = "False" if np.mean(probability_samples) >= 0.7 else "True"
+            label_color = (0, 0, 255) if label == "False" else (0, 255, 0)
+
+            cv2.putText(
+                img=frame,
+                text=label,
+                org=label_position,
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.9,
+                color=label_color,
+                thickness=2,
+                lineType=cv2.LINE_AA
+            )
+
+    frame_count += 1
+    cv2.imshow('Face Spoof Detection', frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        break
 
 cap.release()
 cv2.destroyAllWindows()

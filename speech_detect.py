@@ -1,134 +1,101 @@
 import speech_recognition as sr
 import pyaudio
 import wave
-import time
 import threading
 import os
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
+# Initialize PyAudio and recognizer
+p = pyaudio.PyAudio()
+recognizer = sr.Recognizer()
+stop_words = set(stopwords.words('english'))
+
+# Function to read and save audio to a file
 def read_audio(stream, filename):
-    chunk = 1024  # Record in chunks of 1024 samples
-    sample_format = pyaudio.paInt16  # 16 bits per sample
+    chunk = 1024
+    sample_format = pyaudio.paInt16
     channels = 2
-    fs = 44100  # Record at 44100 samples per second
-    seconds = 10 # Number of seconds to record at once
-    filename = filename
-    frames = []  # Initialize array to store frames
+    fs = 44100
+    seconds = 10
+    frames = []
     
-    for i in range(0, int(fs / chunk * seconds)):
+    for _ in range(0, int(fs / chunk * seconds)):
         data = stream.read(chunk)
         frames.append(data)
     
-    # Save the recorded data as a WAV file
-    wf = wave.open(filename, 'wb')
-    wf.setnchannels(channels)
-    wf.setsampwidth(p.get_sample_size(sample_format))
-    wf.setframerate(fs)
-    wf.writeframes(b''.join(frames))
-    wf.close()
-    # Stop and close the stream
+    with wave.open(filename, 'wb') as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(p.get_sample_size(sample_format))
+        wf.setframerate(fs)
+        wf.writeframes(b''.join(frames))
+
     stream.stop_stream()
     stream.close()
 
+# Convert audio to text
 def convert(i):
     if i >= 0:
-        sound = 'record' + str(i) +'.wav'
-        r = sr.Recognizer()
-        
+        sound = 'record' + str(i) + '.wav'
         with sr.AudioFile(sound) as source:
-            r.adjust_for_ambient_noise(source)
-            print("Converting Audio To Text and saving to file..... ") 
-            audio = r.listen(source)
+            recognizer.adjust_for_ambient_noise(source)
+            print("Converting Audio To Text...")
+            audio = recognizer.listen(source)
+        
         try:
-            value = r.recognize_google(audio) ##### API call to google for speech recognition
-            os.remove(sound)
-            if str is bytes: 
-                result = u"{}".format(value).encode("utf-8")
-            else: 
-                result = "{}".format(value)
- 
-            with open("test.txt","a") as f:
-                f.write(result)
-                f.write(" ")
-                f.close()
+            value = recognizer.recognize_google(audio)
+            os.remove(sound)  # Remove the audio file after conversion
+            
+            # Save the result to a text file
+            with open("test.txt", "a") as f:
+                f.write(value + " ")
                 
         except sr.UnknownValueError:
-            print("")
+            print("Speech Recognition could not understand audio")
         except sr.RequestError as e:
-            print("{0}".format(e))
-        except KeyboardInterrupt:
-            pass
+            print(f"Error with Speech Recognition service: {e}")
 
-p = pyaudio.PyAudio()  # Create an interface to PortAudio
-chunk = 1024  # Record in chunks of 1024 samples
-sample_format = pyaudio.paInt16  # 16 bits per sample
-channels = 2
-fs = 44100
+# Tokenizing and removing stopwords from text
+def remove_stopwords(text):
+    word_tokens = word_tokenize(text)
+    return [word for word in word_tokens if word.lower() not in stop_words]
 
-def save_audios(i):
-    stream = p.open(format=sample_format,channels=channels,rate=fs,
-                frames_per_buffer=chunk,input=True)
-    filename = 'record'+str(i)+'.wav'
+# Compare common words between speech and question files
+def common_member(a, b):
+    a_set = set(a)
+    b_set = set(b)
+    return list(a_set.intersection(b_set))
+
+# Function to save audio and convert simultaneously
+def save_and_convert(i):
+    stream = p.open(format=pyaudio.paInt16, channels=2, rate=44100, frames_per_buffer=1024, input=True)
+    filename = f'record{i}.wav'
     read_audio(stream, filename)
+    convert(i-1)  # Convert previous audio while recording the current one
 
-for i in range(30//10): # Number of total seconds to record/ Number of seconds per recording
-    t1 = threading.Thread(target=save_audios, args=[i]) 
-    x = i-1
-    t2 = threading.Thread(target=convert, args=[x]) # send one earlier than being recorded
-    t1.start() 
-    t2.start() 
-    t1.join() 
-    t2.join() 
-    if i==2:
-        flag = True
-if flag:
-    convert(i)
-    p.terminate()
+# Main function to handle the recording and conversion process
+def main():
+    for i in range(30//10):  # Number of total seconds to record (3 chunks of 10 seconds)
+        t1 = threading.Thread(target=save_and_convert, args=[i])
+        t1.start()
+        t1.join()
 
-
-from nltk.corpus import stopwords 
-from nltk.tokenize import word_tokenize 
-
-file = open("test.txt") ## Student speech file
-data = file.read()
-file.close()
-stop_words = set(stopwords.words('english'))   
-word_tokens = word_tokenize(data) ######### tokenizing sentence
-filtered_sentence = [w for w in word_tokens if not w in stop_words]  
-filtered_sentence = [] 
-  
-for w in word_tokens:   ####### Removing stop words
-    if w not in stop_words: 
-        filtered_sentence.append(w) 
-
-####### creating a final file
-f=open('final.txt','w')
-for ele in filtered_sentence:
-    f.write(ele+' ')
-f.close()
-    
-##### checking whether proctor needs to be alerted or not
-file = open("paper.txt") ## Question file
-data = file.read()
-file.close()
-stop_words = set(stopwords.words('english'))   
-word_tokens = word_tokenize(data) ######### tokenizing sentence
-filtered_questions = [w for w in word_tokens if not w in stop_words]  
-filtered_questions = [] 
-  
-for w in word_tokens:   ####### Removing stop words
-    if w not in stop_words: 
-        filtered_questions.append(w) 
+    # After recording and converting, process the text
+    with open("test.txt", "r") as file:
+        speech_data = file.read()
         
-def common_member(a, b):     
-    a_set = set(a) 
-    b_set = set(b) 
-      
-    # check length  
-    if len(a_set.intersection(b_set)) > 0: 
-        return(a_set.intersection(b_set))   
-    else: 
-        return([]) 
+    filtered_speech = remove_stopwords(speech_data)
+    
+    # Read and filter question data
+    with open("paper.txt", "r") as file:
+        question_data = file.read()
+        
+    filtered_questions = remove_stopwords(question_data)
+    
+    # Compare speech and questions for common words
+    comm = common_member(filtered_questions, filtered_speech)
+    print(f'Number of common elements: {len(comm)}')
+    print(comm)
 
-comm = common_member(filtered_questions, filtered_sentence)
-print('Number of common elements:', len(comm))
-print(comm)
+if __name__ == '__main__':
+    main()

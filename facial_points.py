@@ -1,106 +1,109 @@
-# -*- coding: utf-8 -*-
-
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 
 
-def get_landmark_model(saved_model='models/pose_model'):
+def get_landmark_model(model_path='models/pose_model'):
+    """
+    Load and return the facial landmark TensorFlow model.
+    
+    Parameters:
+    - model_path: Path to the saved model directory.
+    
+    Returns:
+    - Loaded TensorFlow model.
+    """
+    return tf.saved_model.load(model_path)
 
-    #model = keras.models.load_model(saved_model)
-    model = tf.saved_model.load(saved_model)
-    return model
 
 def get_square_box(box):
+    """
+    Convert a rectangular bounding box to a square one by expanding the shorter side.
+    
+    Parameters:
+    - box: List of [x1, y1, x2, y2]
+    
+    Returns:
+    - Square bounding box [x1, y1, x2, y2]
+    """
+    x1, y1, x2, y2 = box
+    width = x2 - x1
+    height = y2 - y1
+    diff = height - width
+    delta = abs(diff) // 2
 
-    left_x = box[0]
-    top_y = box[1]
-    right_x = box[2]
-    bottom_y = box[3]
+    if diff > 0:
+        x1 -= delta
+        x2 += delta + (diff % 2)
+    elif diff < 0:
+        y1 -= delta
+        y2 += delta + (abs(diff) % 2)
 
-    box_width = right_x - left_x
-    box_height = bottom_y - top_y
+    assert (x2 - x1) == (y2 - y1), 'Box is not square.'
 
-    # Check if box is already a square. If not, make it a square.
-    diff = box_height - box_width
-    delta = int(abs(diff) / 2)
+    return [x1, y1, x2, y2]
 
-    if diff == 0:                   # Already a square.
-        return box
-    elif diff > 0:                  # Height > width, a slim box.
-        left_x -= delta
-        right_x += delta
-        if diff % 2 == 1:
-            right_x += 1
-    else:                           # Width > height, a short box.
-        top_y -= delta
-        bottom_y += delta
-        if diff % 2 == 1:
-            bottom_y += 1
-
-    # Make sure box is always square.
-    assert ((right_x - left_x) == (bottom_y - top_y)), 'Box is not square.'
-
-    return [left_x, top_y, right_x, bottom_y]
 
 def move_box(box, offset):
-        
-        left_x = box[0] + offset[0]
-        top_y = box[1] + offset[1]
-        right_x = box[2] + offset[0]
-        bottom_y = box[3] + offset[1]
-        return [left_x, top_y, right_x, bottom_y]
-
-def detect_marks(img, model, face):
     """
-    Find the facial landmarks in an image from the faces
+    Move a box by a given offset.
     
-    img : np.uint8
-        The image in which landmarks are to be found
-    model : Tensorflow model
-        Loaded facial landmark model
-    face : list
-        Face coordinates (x, y, x1, y1) in which the landmarks are to be found
-
+    Parameters:
+    - box: List of [x1, y1, x2, y2]
+    - offset: List of [dx, dy]
+    
+    Returns:
+    - Moved box [x1+dx, y1+dy, x2+dx, y2+dy]
     """
+    dx, dy = offset
+    x1, y1, x2, y2 = box
+    return [x1 + dx, y1 + dy, x2 + dx, y2 + dy]
 
-    offset_y = int(abs((face[3] - face[1]) * 0.1))
-    box_moved = move_box(face, [0, offset_y])
-    facebox = get_square_box(box_moved)
-    
-    h, w = img.shape[:2]
-    if facebox[0] < 0:
-        facebox[0] = 0
-    if facebox[1] < 0:
-        facebox[1] = 0
-    if facebox[2] > w:
-        facebox[2] = w
-    if facebox[3] > h:
-        facebox[3] = h
-    
-    face_img = img[facebox[1]: facebox[3],
-                     facebox[0]: facebox[2]]
-    face_img = cv2.resize(face_img, (128, 128))
-    face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-    
-    # # Actual detection.
-    predictions = model.signatures["predict"](
-        tf.constant([face_img], dtype=tf.uint8))
 
-    # Convert predictions to landmarks.
-    marks = np.array(predictions['output']).flatten()[:136]
-    marks = np.reshape(marks, (-1, 2))
+def detect_marks(image, model, face_box):
+    """
+    Detect facial landmarks using a pre-trained model.
     
-    marks *= (facebox[2] - facebox[0])
-    marks[:, 0] += facebox[0]
-    marks[:, 1] += facebox[1]
-    marks = marks.astype(np.uint)
-
-    return marks
-
-def draw_marks(image, marks, color=(0, 255, 0)):
-
-    for mark in marks:
-        cv2.circle(image, (mark[0], mark[1]), 2, color, -1, cv2.LINE_AA)
+    Parameters:
+    - image: Input BGR image
+    - model: Loaded TensorFlow facial landmark model
+    - face_box: List [x1, y1, x2, y2] of face bounding box
     
+    Returns:
+    - marks: np.ndarray of shape (68, 2) with landmark positions
+    """
+    offset_y = int(0.1 * abs(face_box[3] - face_box[1]))
+    shifted_box = move_box(face_box, [0, offset_y])
+    square_box = get_square_box(shifted_box)
+
+    h, w = image.shape[:2]
+    x1, y1, x2, y2 = map(int, square_box)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
+
+    face_crop = image[y1:y2, x1:x2]
+    face_resized = cv2.resize(face_crop, (128, 128))
+    face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
+
+    # Run inference
+    result = model.signatures["predict"](tf.constant([face_rgb], dtype=tf.uint8))
+    landmarks = np.array(result['output']).flatten()[:136].reshape(-1, 2)
+
+    landmarks *= (x2 - x1)
+    landmarks[:, 0] += x1
+    landmarks[:, 1] += y1
+
+    return landmarks.astype(np.uint)
+
+
+def draw_marks(image, landmarks, color=(0, 255, 0)):
+    """
+    Draw facial landmarks on the image.
+    
+    Parameters:
+    - image: Image on which landmarks are drawn
+    - landmarks: np.ndarray of shape (N, 2)
+    - color: Landmark point color
+    """
+    for x, y in landmarks:
+        cv2.circle(image, (x, y), 2, color, -1, cv2.LINE_AA)

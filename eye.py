@@ -1,123 +1,117 @@
-# -*- coding: utf-8 -*-
-
 import cv2
 import numpy as np
 from face import get_face_detector, find_faces
-from faceial_points import get_landmark_model, detect_marks
+from facial_points import get_landmark_model, detect_marks
 
 
-def eye_on_mask(mask, side, shape):
+# Eye indices from dlib shape
+LEFT_EYE_INDICES = [36, 37, 38, 39, 40, 41]
+RIGHT_EYE_INDICES = [42, 43, 44, 45, 46, 47]
 
-    points = [shape[i] for i in side]
-    points = np.array(points, dtype=np.int32)
-    mask = cv2.fillConvexPoly(mask, points, 255)
-    l = points[0][0]
-    t = (points[1][1]+points[2][1])//2
-    r = points[3][0]
-    b = (points[4][1]+points[5][1])//2
-    return mask, [l, t, r, b]
+def apply_eye_mask(mask, eye_indices, landmarks):
+    eye_points = np.array([landmarks[i] for i in eye_indices], dtype=np.int32)
+    mask = cv2.fillConvexPoly(mask, eye_points, 255)
+    left = eye_points[0][0]
+    top = (eye_points[1][1] + eye_points[2][1]) // 2
+    right = eye_points[3][0]
+    bottom = (eye_points[4][1] + eye_points[5][1]) // 2
+    return mask, [left, top, right, bottom]
 
-def find_eyeball_position(end_points, cx, cy):
-    
-    x_ratio = (end_points[0] - cx)/(cx - end_points[2])
-    y_ratio = (cy - end_points[1])/(end_points[3] - cy)
-    if x_ratio > 3:
-        return 1
-    elif x_ratio < 0.33:
-        return 2
-    elif y_ratio < 0.33:
-        return 3
+def determine_eyeball_position(bounds, cx, cy):
+    ratio_x = (bounds[0] - cx) / (cx - bounds[2])
+    ratio_y = (cy - bounds[1]) / (bounds[3] - cy)
+
+    if ratio_x > 3:
+        return 1  # Looking left
+    elif ratio_x < 0.33:
+        return 2  # Looking right
+    elif ratio_y < 0.33:
+        return 3  # Looking up
     else:
-        return 0
+        return 0  # Looking straight
 
-    
-def contouring(thresh, mid, img, end_points, right=False):
-
-    cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+def extract_eye_contour(thresh_img, mid_x, frame, eye_bounds, is_right_eye=False):
+    contours, _ = cv2.findContours(thresh_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     try:
-        cnt = max(cnts, key = cv2.contourArea)
-        M = cv2.moments(cnt)
-        cx = int(M['m10']/M['m00'])
-        cy = int(M['m01']/M['m00'])
-        if right:
-            cx += mid
-        cv2.circle(img, (cx, cy), 4, (0, 0, 255), 2)
-        pos = find_eyeball_position(end_points, cx, cy)
-        return pos
+        max_contour = max(contours, key=cv2.contourArea)
+        moments = cv2.moments(max_contour)
+        cx = int(moments['m10'] / moments['m00'])
+        cy = int(moments['m01'] / moments['m00'])
+
+        if is_right_eye:
+            cx += mid_x
+
+        cv2.circle(frame, (cx, cy), 4, (0, 0, 255), 2)
+        position = determine_eyeball_position(eye_bounds, cx, cy)
+        return position
     except:
-        pass
-    
-def process_thresh(thresh):
+        return None
 
-    thresh = cv2.erode(thresh, None, iterations=2) 
-    thresh = cv2.dilate(thresh, None, iterations=4) 
-    thresh = cv2.medianBlur(thresh, 3) 
-    thresh = cv2.bitwise_not(thresh)
-    return thresh
+def preprocess_threshold_image(thresh_img):
+    thresh_img = cv2.erode(thresh_img, None, iterations=2)
+    thresh_img = cv2.dilate(thresh_img, None, iterations=4)
+    thresh_img = cv2.medianBlur(thresh_img, 3)
+    thresh_img = cv2.bitwise_not(thresh_img)
+    return thresh_img
 
-def print_eye_pos(img, left, right):
+def display_gaze_direction(frame, left_pos, right_pos):
+    if left_pos == right_pos and left_pos != 0:
+        label = ''
+        if left_pos == 1:
+            label = 'Looking left'
+        elif left_pos == 2:
+            label = 'Looking right'
+        elif left_pos == 3:
+            label = 'Looking up'
+        print(label)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(frame, label, (30, 30), font, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
-    if left == right and left != 0:
-        text = ''
-        if left == 1:
-            print('Looking left')
-            text = 'Looking left'
-        elif left == 2:
-            print('Looking right')
-            text = 'Looking right'
-        elif left == 3:
-            print('Looking up')
-            text = 'Looking up'
-        font = cv2.FONT_HERSHEY_SIMPLEX 
-        cv2.putText(img, text, (30, 30), font,  
-                   1, (0, 255, 255), 2, cv2.LINE_AA) 
+# Load models
+face_detector = get_face_detector()
+landmark_detector = get_landmark_model()
 
-face_model = get_face_detector()
-landmark_model = get_landmark_model()
-left = [36, 37, 38, 39, 40, 41]
-right = [42, 43, 44, 45, 46, 47]
-
+# Video capture
 cap = cv2.VideoCapture(0)
-ret, img = cap.read()
-thresh = img.copy()
+ret, frame = cap.read()
+thresh_img = frame.copy()
 
 cv2.namedWindow('image')
-kernel = np.ones((9, 9), np.uint8)
+dilate_kernel = np.ones((9, 9), np.uint8)
 
-def nothing(x):
-    pass
-cv2.createTrackbar('threshold', 'image', 75, 255, nothing)
+cv2.createTrackbar('threshold', 'image', 75, 255, lambda x: None)
 
-while(True):
-    ret, img = cap.read()
-    rects = find_faces(img, face_model)
-    
-    for rect in rects:
-        shape = detect_marks(img, landmark_model, rect)
-        mask = np.zeros(img.shape[:2], dtype=np.uint8)
-        mask, end_points_left = eye_on_mask(mask, left, shape)
-        mask, end_points_right = eye_on_mask(mask, right, shape)
-        mask = cv2.dilate(mask, kernel, 5)
-        
-        eyes = cv2.bitwise_and(img, img, mask=mask)
-        mask = (eyes == [0, 0, 0]).all(axis=2)
-        eyes[mask] = [255, 255, 255]
-        mid = int((shape[42][0] + shape[39][0]) // 2)
-        eyes_gray = cv2.cvtColor(eyes, cv2.COLOR_BGR2GRAY)
-        threshold = cv2.getTrackbarPos('threshold', 'image')
-        _, thresh = cv2.threshold(eyes_gray, threshold, 255, cv2.THRESH_BINARY)
-        thresh = process_thresh(thresh)
-        
-        eyeball_pos_left = contouring(thresh[:, 0:mid], mid, img, end_points_left)
-        eyeball_pos_right = contouring(thresh[:, mid:], mid, img, end_points_right, True)
-        print_eye_pos(img, eyeball_pos_left, eyeball_pos_right)
-        # for (x, y) in shape[36:48]:
-        #     cv2.circle(img, (x, y), 2, (255, 0, 0), -1)
-        
-    cv2.imshow('eyes', img)
-    cv2.imshow("image", thresh)
+while True:
+    ret, frame = cap.read()
+    detected_faces = find_faces(frame, face_detector)
+
+    for face in detected_faces:
+        landmarks = detect_marks(frame, landmark_detector, face)
+        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+
+        mask, left_eye_bounds = apply_eye_mask(mask, LEFT_EYE_INDICES, landmarks)
+        mask, right_eye_bounds = apply_eye_mask(mask, RIGHT_EYE_INDICES, landmarks)
+        mask = cv2.dilate(mask, dilate_kernel, 5)
+
+        eye_region = cv2.bitwise_and(frame, frame, mask=mask)
+        masked_area = (eye_region == [0, 0, 0]).all(axis=2)
+        eye_region[masked_area] = [255, 255, 255]
+
+        mid_x = (landmarks[42][0] + landmarks[39][0]) // 2
+        eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
+        threshold_value = cv2.getTrackbarPos('threshold', 'image')
+        _, thresh_img = cv2.threshold(eye_gray, threshold_value, 255, cv2.THRESH_BINARY)
+        thresh_img = preprocess_threshold_image(thresh_img)
+
+        left_eye_position = extract_eye_contour(thresh_img[:, 0:mid_x], mid_x, frame, left_eye_bounds)
+        right_eye_position = extract_eye_contour(thresh_img[:, mid_x:], mid_x, frame, right_eye_bounds, is_right_eye=True)
+
+        display_gaze_direction(frame, left_eye_position, right_eye_position)
+
+    cv2.imshow('eyes', frame)
+    cv2.imshow("image", thresh_img)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-    
+
 cap.release()
 cv2.destroyAllWindows()
