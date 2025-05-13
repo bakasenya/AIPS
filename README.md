@@ -30,7 +30,7 @@ Employs OpenCV, Dlib, YOLOv3, and Google Speech Recognition API for intelligent 
 ![2person](images/Picture2.png)
 
 ## Mobile phone detected-
-![mobilephone](images/Pictur31.png)
+![mobilephone](images/Picture3.png)
 
 ## Audio audio_part.py
 1. Audio from microphone is recorded and converted into text using Google's Speech recognition API.
