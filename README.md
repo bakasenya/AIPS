@@ -11,12 +11,12 @@ Uses microphone input to detect and flag suspicious sounds or unauthorized speec
 Employs OpenCV, Dlib, YOLOv3, and Google Speech Recognition API for intelligent detection.
 
 ![CNN](images/CNN.png)
-![YoLo](images/YoLo3.png)
+![YoLo](images/YoLo3.jpg)
 
 ## Vision
 
 1. If the person is looking left, right, up or down, it will track eyes and report.
-2. Checks if the candidate is opening his mouth using mouth_opening_detector.py
+2. [Check mouth opening logic → mouth_opening_detector.py](mouth_opening_detector.py)
 3.Find instances of Mobile phones.
 4. Reports if no or more than one person is detected.
 5. Face spoof detection
